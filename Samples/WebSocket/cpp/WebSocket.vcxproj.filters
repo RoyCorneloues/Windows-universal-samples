@@ -8,16 +8,18 @@
     <ClCompile Include="..\..\..\SharedContent\cpp\MainPage.xaml.cpp" />
     <ClCompile Include="pch.cpp" />
     <ClCompile Include="SampleConfiguration.cpp" />
-    <ClCompile Include="Scenario1.xaml.cpp" />
-    <ClCompile Include="Scenario2.xaml.cpp" />
+    <ClCompile Include="Scenario1_UTF8.xaml.cpp" />
+    <ClCompile Include="Scenario2_Binary.xaml.cpp" />
+    <ClCompile Include="Scenario3_ClientAuthentication.xaml.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h" />
     <ClInclude Include="..\..\..\SharedContent\cpp\App.xaml.h" />
     <ClInclude Include="..\..\..\SharedContent\cpp\MainPage.xaml.h" />
     <ClInclude Include="SampleConfiguration.h" />
-    <ClInclude Include="Scenario1.xaml.h" />
-    <ClInclude Include="Scenario2.xaml.h" />
+    <ClInclude Include="Scenario1_UTF8.xaml.h" />
+    <ClInclude Include="Scenario2_Binary.xaml.h" />
+    <ClInclude Include="Scenario3_ClientAuthentication.xaml.h" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="..\..\..\SharedContent\media\microsoft-sdk.png">
@@ -47,8 +49,9 @@
   </ItemGroup>
   <ItemGroup>
     <Page Include="..\..\..\SharedContent\cpp\MainPage.xaml" />
-    <Page Include="Scenario1.xaml" />
-    <Page Include="Scenario2.xaml" />
+    <Page Include="..\shared\Scenario1_UTF8.xaml" />
+    <Page Include="..\shared\Scenario2_Binary.xaml" />
+    <Page Include="..\shared\Scenario3_ClientAuthentication.xaml" />
     <Page Include="..\..\..\SharedContent\xaml\Styles.xaml">
       <Filter>Styles</Filter>
     </Page>
@@ -60,5 +63,10 @@
     <Filter Include="Styles">
       <UniqueIdentifier>{5f14d9ad-84fb-44d4-a346-5c936a6da1c5}</UniqueIdentifier>
     </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\shared\clientCert.pfx">
+      <Filter>Assets</Filter>
+    </None>
   </ItemGroup>
 </Project>

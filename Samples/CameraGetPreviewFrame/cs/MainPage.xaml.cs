@@ -13,6 +13,7 @@ using System;
 using System.Diagnostics;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Threading;
 using System.Threading.Tasks;
 using Windows.ApplicationModel;
 using Windows.Devices.Enumeration;
@@ -50,6 +51,9 @@ namespace CameraGetPreviewFrame
         // Reference: http://msdn.microsoft.com/en-us/library/windows/apps/xaml/hh868174.aspx
         private static readonly Guid RotationKey = new Guid("C380465D-2271-428C-9B83-ECEA3B4A85C1");
 
+        // Folder in which the captures will be stored (initialized in InitializeCameraAsync)
+        private StorageFolder _captureFolder = null;
+
         // Prevent the screen from sleeping while the camera is running
         private readonly DisplayRequest _displayRequest = new DisplayRequest();
 
@@ -60,6 +64,7 @@ namespace CameraGetPreviewFrame
         private MediaCapture _mediaCapture;
         private bool _isInitialized = false;
         private bool _isPreviewing = false;
+        private static readonly SemaphoreSlim _mediaCaptureLifeLock = new SemaphoreSlim(1);
 
         // Information about the camera device
         private bool _mirroringPreview = false;
@@ -90,7 +95,7 @@ namespace CameraGetPreviewFrame
                 await CleanupCameraAsync();
 
                 _displayInformation.OrientationChanged -= DisplayInformation_OrientationChanged;
-                
+
                 deferral.Complete();
             }
         }
@@ -173,7 +178,7 @@ namespace CameraGetPreviewFrame
             }
         }
 
-        private async void GetPreviewFrameButton_Tapped(object sender, TappedRoutedEventArgs e)
+        private async void GetPreviewFrameButton_Click(object sender, RoutedEventArgs e)
         {
             // If preview is not running, no preview frames can be acquired
             if (!_isPreviewing) return;
@@ -210,6 +215,8 @@ namespace CameraGetPreviewFrame
         {
             Debug.WriteLine("InitializeCameraAsync");
 
+            await _mediaCaptureLifeLock.WaitAsync();
+
             if (_mediaCapture == null)
             {
                 // Attempt to get the back camera if one is available, but use any camera device if not
@@ -218,6 +225,7 @@ namespace CameraGetPreviewFrame
                 if (cameraDevice == null)
                 {
                     Debug.WriteLine("No camera device found!");
+                    _mediaCaptureLifeLock.Release();
                     return;
                 }
 
@@ -239,6 +247,10 @@ namespace CameraGetPreviewFrame
                 {
                     Debug.WriteLine("The app was denied access to the camera");
                 }
+                finally
+                {
+                    _mediaCaptureLifeLock.Release();
+                }
 
                 // If initialization succeeded, start the preview
                 if (_isInitialized)
@@ -257,9 +269,17 @@ namespace CameraGetPreviewFrame
                         // Only mirror the preview if the camera is on the front panel
                         _mirroringPreview = (cameraDevice.EnclosureLocation.Panel == Windows.Devices.Enumeration.Panel.Front);
                     }
-                    
+
                     await StartPreviewAsync();
+
+                    var picturesLibrary = await StorageLibrary.GetLibraryAsync(KnownLibraryId.Pictures);
+                    // Fall back to the local app storage if the Pictures Library is not available
+                    _captureFolder = picturesLibrary.SaveFolder ?? ApplicationData.Current.LocalFolder;
                 }
+            }
+            else
+            {
+                _mediaCaptureLifeLock.Release();
             }
         }
 
@@ -381,7 +401,11 @@ namespace CameraGetPreviewFrame
                 // Save the frame (as is, no rotation is being applied)
                 if (SaveFrameCheckBox.IsChecked == true)
                 {
-                    await SaveSoftwareBitmapAsync(previewFrame);
+                    var file = await _captureFolder.CreateFileAsync("PreviewFrame.jpg", CreationCollisionOption.GenerateUniqueName);
+
+                    Debug.WriteLine("Saving preview frame to " + file.Path);
+
+                    await SaveSoftwareBitmapAsync(previewFrame, file);
                 }
             }
         }
@@ -425,24 +449,33 @@ namespace CameraGetPreviewFrame
         /// <returns></returns>
         private async Task CleanupCameraAsync()
         {
-            if (_isInitialized)
+            await _mediaCaptureLifeLock.WaitAsync();
+
+            try
             {
-                if (_isPreviewing)
+                if (_isInitialized)
                 {
-                    // The call to stop the preview is included here for completeness, but can be
-                    // safely removed if a call to MediaCapture.Dispose() is being made later,
-                    // as the preview will be automatically stopped at that point
-                    await StopPreviewAsync();
+                    if (_isPreviewing)
+                    {
+                        // The call to stop the preview is included here for completeness, but can be
+                        // safely removed if a call to MediaCapture.Dispose() is being made later,
+                        // as the preview will be automatically stopped at that point
+                        await StopPreviewAsync();
+                    }
+
+                    _isInitialized = false;
                 }
 
-                _isInitialized = false;
+                if (_mediaCapture != null)
+                {
+                    _mediaCapture.Failed -= MediaCapture_Failed;
+                    _mediaCapture.Dispose();
+                    _mediaCapture = null;
+                }
             }
-
-            if (_mediaCapture != null)
+            finally
             {
-                _mediaCapture.Failed -= MediaCapture_Failed;
-                _mediaCapture.Dispose();
-                _mediaCapture = null;
+                _mediaCaptureLifeLock.Release();
             }
         }
 
@@ -491,13 +524,13 @@ namespace CameraGetPreviewFrame
         }
 
         /// <summary>
-        /// Saves a SoftwareBitmap to the Pictures library with the specified name
+        /// Saves a SoftwareBitmap to the specified StorageFile
         /// </summary>
-        /// <param name="bitmap"></param>
+        /// <param name="bitmap">SoftwareBitmap to save</param>
+        /// <param name="file">Target StorageFile to save to</param>
         /// <returns></returns>
-        private static async Task SaveSoftwareBitmapAsync(SoftwareBitmap bitmap)
+        private static async Task SaveSoftwareBitmapAsync(SoftwareBitmap bitmap, StorageFile file)
         {
-            var file = await KnownFolders.PicturesLibrary.CreateFileAsync("PreviewFrame.jpg", CreationCollisionOption.GenerateUniqueName);
             using (var outputStream = await file.OpenAsync(FileAccessMode.ReadWrite))
             {
                 var encoder = await BitmapEncoder.CreateAsync(BitmapEncoder.JpegEncoderId, outputStream);
